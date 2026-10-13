@@ -76,6 +76,7 @@ for cfg in "$USB"/boot/grub/grub.cfg "$USB"/EFI/boot/grub.cfg; do
 
   entry="menuentry \"${LABEL}\" --id basic-imaging {
   search --set -f /live/vmlinuz
+  echo \"Loading Clonezilla Live - please wait, the screen may go blank for a minute...\"
   ${linux_cmd} $(set_run_hook "$linux")
   ${initrd_cmd} ${initrd}
 }

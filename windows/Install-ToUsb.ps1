@@ -165,6 +165,7 @@ foreach ($rel in 'boot\grub\grub.cfg','EFI\boot\grub.cfg') {
   $entry = @"
 menuentry "$Label" --id basic-imaging {
   search --set -f /live/vmlinuz
+  echo "Loading Clonezilla Live - please wait, the screen may go blank for a minute..."
   $linuxCmd $(Set-RunHook $linux)
   $initrdCmd $initrd
 }
