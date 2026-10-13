@@ -22,6 +22,12 @@ MIT licensed, public on GitHub (ohthedufner/clonezilla-simple).
   `ocs-live-general`.
 - Line endings: `.sh`/`.ps1` LF, `.cmd` CRLF (enforced by `.gitattributes`).
   The PS installer rewrites copied files as LF/no-BOM via `Save-Unix`.
+- **The `.ps1` must be pure ASCII, and must read files via `Read-Utf8`, never
+  `Get-Content`.** The `.cmd` runs Windows PowerShell 5.1, which decodes BOM-less
+  files as ANSI: an em dash (`E2 80 94`) puts a `0x94` curly-quote in the parse
+  stream and the whole script fails with "unexpected token" errors (shipped bug,
+  fixed 2026-10), and `Get-Content` mojibakes the UTF-8 `·`/`—` in the copied
+  `basic-imaging.sh`. pwsh 7 masks both — always test with `powershell.exe`.
 
 ## Layout
 - `basic-imaging.sh` — the TUI. Sections: helpers, image repository, actions, main.
@@ -33,11 +39,15 @@ MIT licensed, public on GitHub (ohthedufner/clonezilla-simple).
 
 ## Disk picker rules
 Users identify drives by hardware, not letters: Model · Size · Bus · Serial ·
-[fstype:label, …]. The live medium's own disk (`boot_disk()`) is never listed as a
-target. Restore requires a default-No confirm plus typing the device name.
+[fstype:label, …]. Neither the live medium's own disk (`boot_disk()`) nor the
+disk backing a mounted image repo (`repo_disk()`) is ever listed as a target.
+Query lsblk fields one per call — positional multi-column parsing shifts on
+empty fields and multi-word models. Restore requires a default-No confirm plus
+typing the device name.
 
 ## ocs-sr defaults (change deliberately)
-- savedisk: `-q2 -c -j2 -z1p -i 0 -sfsck -senc -p true`, then `ocs-chkimg`.
+- savedisk: `-q2 -c -j2 -z1p -i 4096 -sfsck -senc -p true`, then `ocs-chkimg`.
+  (`-i 4096` = 4 GB split, FAT32-safe; "no split" has no documented -i value.)
 - restoredisk: `-g auto -e1 auto -e2 -r -j2 -c -p true`.
 Images live at `/home/partimag` (Clonezilla's canonical mountpoint).
 
@@ -47,10 +57,14 @@ configs. Pattern used so far:
 ```
 mkdir -p fake/live fake/syslinux fake/boot/grub   # + stock cfg files
 ./install-to-usb.sh fake                          # bash
-pwsh -File windows/Install-ToUsb.ps1 -Drive fake  # powershell
+powershell.exe -NoProfile -File windows/Install-ToUsb.ps1 -Drive fake  # 5.1, same as the .cmd
 diff the two results; run each twice (second run must be a no-op)
 shellcheck -S warning *.sh
 ```
+Use `powershell.exe` (5.1), not `pwsh` — users run the .cmd, and 5.1's ANSI
+default for BOM-less files has already shipped one parse-breaking bug (see
+Hard constraints). Also parse-check:
+`[Management.Automation.Language.Parser]::ParseFile(...)` under 5.1.
 **Not yet verified on real hardware**: `ocs-sr` flag set on current Clonezilla,
 and the medium path `/lib/live/mount/medium` (older builds used `/live/image`).
 First real test: Rufus a stick, run the .cmd, boot in a VM against a scratch disk.

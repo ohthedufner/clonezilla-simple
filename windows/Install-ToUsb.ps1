@@ -8,7 +8,7 @@
   syslinux.cfg (BIOS) and grub.cfg (UEFI) using Clonezilla's ocs_live_run= hook.
   Stock entries are left untouched. Safe to re-run.
 
-  No admin rights needed — it only writes files on a FAT32 USB stick.
+  No admin rights needed - it only writes files on a FAT32 USB stick.
 #>
 param([string]$Drive)   # optional: skip auto-detect, e.g. -Drive E:
 $ErrorActionPreference = 'Stop'
@@ -34,14 +34,20 @@ function Replace-First([string]$text, [string]$pattern, [string]$with) {
 function Write-Step($m) { Write-Host "  $m" -ForegroundColor Cyan }
 function Write-Ok($m)   { Write-Host "  $m" -ForegroundColor Green }
 
-# Write text with LF endings and no BOM — syslinux/grub on the live system expect Unix files.
+# Write text with LF endings and no BOM - syslinux/grub on the live system expect Unix files.
 function Save-Unix($path, [string]$text) {
   $text = $text -replace "`r`n", "`n"
   [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false))
 }
 
+# Read text as UTF-8 explicitly - Windows PowerShell 5.1 decodes BOM-less files as ANSI,
+# which corrupts multi-byte characters on the round trip through Save-Unix.
+function Read-Utf8([string]$path) {
+  return [IO.File]::ReadAllText($path, (New-Object Text.UTF8Encoding $false))
+}
+
 Write-Host ""
-Write-Host "clonezilla-simple — add Basic Disk Imaging to a Clonezilla Live USB" -ForegroundColor White
+Write-Host "clonezilla-simple - add Basic Disk Imaging to a Clonezilla Live USB" -ForegroundColor White
 Write-Host ""
 
 # ---------------------------------------------------------------- find the stick
@@ -102,14 +108,14 @@ Write-Host ""
 
 # ---------------------------------------------------------------- copy script
 Write-Step "Copying basic-imaging.sh"
-Save-Unix (Join-Path $usb 'basic-imaging.sh') (Get-Content $Src -Raw)
+Save-Unix (Join-Path $usb 'basic-imaging.sh') (Read-Utf8 $Src)
 Write-Ok "done"
 
 # ---------------------------------------------------------------- syslinux (BIOS)
 foreach ($rel in 'syslinux\syslinux.cfg','syslinux\isolinux.cfg') {
   $cfg = Join-Path $usb $rel
   if (-not (Test-Path $cfg)) { continue }
-  $text = (Get-Content $cfg -Raw) -replace "`r`n", "`n"
+  $text = (Read-Utf8 $cfg) -replace "`r`n", "`n"
   if ($text -match 'basic-imaging\.sh') { Write-Ok "$rel already patched"; continue }
 
   Write-Step "Patching $rel"
@@ -143,7 +149,7 @@ label basic-imaging
 foreach ($rel in 'boot\grub\grub.cfg','EFI\boot\grub.cfg') {
   $cfg = Join-Path $usb $rel
   if (-not (Test-Path $cfg)) { continue }
-  $text = (Get-Content $cfg -Raw) -replace "`r`n", "`n"
+  $text = (Read-Utf8 $cfg) -replace "`r`n", "`n"
   if ($text -match 'basic-imaging\.sh') { Write-Ok "$rel already patched"; continue }
 
   Write-Step "Patching $rel"
