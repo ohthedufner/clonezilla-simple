@@ -29,13 +29,15 @@ solves the UX problem but is a full graphical ISO. This sits in between.
 
 - **Disks are shown as hardware, not letters.** You pick from
   `Samsung SSD 870 EVO · 931.5G · SATA · sn:S5Y... · [ntfs:Windows, vfat:EFI]`
-  — not `sda`. The Clonezilla USB itself is hidden from the list.
+  — not `sda`. The Clonezilla USB itself — and the drive holding your
+  images — are hidden from the list.
 - **Restore makes you prove it.** Full disk details, a default-No confirm,
   then you type the device name.
 - **Verification is built in.** Every backup is checked with `ocs-chkimg`
   when it finishes; you can also verify any image on demand.
-- **Sane defaults, no questions.** partclone, parallel gzip, single file,
-  no encryption, no fsck. Edit two lines in the script if you want otherwise.
+- **Sane defaults, no questions.** partclone, parallel gzip, 4 GB chunks
+  (FAT32-safe), no encryption, no fsck. Edit two lines in the script if you
+  want otherwise.
 - **Nothing removed.** Option 5 is the stock `ocs-live-general` menu. Stock
   boot entries stay in the boot menu too.
 
@@ -95,7 +97,7 @@ made here are ordinary Clonezilla images and vice-versa.
 
 | Menu item | Command |
 |-----------|---------|
-| Back up   | `ocs-sr -q2 -c -j2 -z1p -i 0 -sfsck -senc -p true savedisk NAME DISK` then `ocs-chkimg` |
+| Back up   | `ocs-sr -q2 -c -j2 -z1p -i 4096 -sfsck -senc -p true savedisk NAME DISK` then `ocs-chkimg` |
 | Restore   | `ocs-sr -g auto -e1 auto -e2 -r -j2 -c -p true restoredisk NAME DISK` |
 | Verify    | `ocs-chkimg -or /home/partimag NAME` |
 

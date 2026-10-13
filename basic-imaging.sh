@@ -39,6 +39,14 @@ boot_disk() {
   [ -n "$src" ] && lsblk -no PKNAME "$src" 2>/dev/null | head -1
 }
 
+# The disk backing a mounted image repo — never offer it either (restoring over
+# it would destroy the images mid-write). Empty for network repos or none.
+repo_disk() {
+  local src
+  src=$(findmnt -n -o SOURCE "$IMG_ROOT" 2>/dev/null)
+  [ -n "$src" ] && lsblk -no PKNAME "$src" 2>/dev/null | head -1
+}
+
 # Short human description of what's on a disk, e.g. "ntfs:Windows, vfat:EFI"
 disk_contents() {
   local disk=$1 out=""
@@ -50,23 +58,29 @@ disk_contents() {
 }
 
 # Emit dialog menu items: "sda" "WDC WD10EZEX 931.5G SATA  [ntfs:Windows, vfat:EFI]"
+# One lsblk call per field: a combined listing is positional, and multi-word
+# models or empty columns shift fields into the wrong variables.
 disk_menu_items() {
   local skip name size model tran serial
-  skip=$(boot_disk)
-  while read -r name size model tran; do
-    [ "$name" = "$skip" ] && continue
+  skip="$(boot_disk) $(repo_disk)"
+  for name in $(lsblk -dno NAME -e 7,11); do
+    case $name in loop*|sr*|zram*) continue;; esac
+    case " $skip " in *" $name "*) continue;; esac
+    size=$(lsblk -dno SIZE "/dev/$name")
+    model=$(lsblk -dno MODEL "/dev/$name")
+    tran=$(lsblk -dno TRAN "/dev/$name")
     serial=$(udevadm info --query=property --name="/dev/$name" 2>/dev/null \
              | sed -n 's/^ID_SERIAL_SHORT=//p')
     printf '%s\n' "$name"
     printf '%s\n' "$(printf '%-22.22s %7s %-5s %s  [%s]' \
        "${model:-unknown}" "$size" "${tran^^}" "${serial:+sn:$serial}" "$(disk_contents "$name")")"
-  done < <(lsblk -dno NAME,SIZE,MODEL,TRAN -e 7,11 | awk '$1 !~ /^(loop|sr|zram)/')
+  done
 }
 
 pick_disk() {   # $1 = prompt ; prints chosen disk name
   local items
   mapfile -t items < <(disk_menu_items)
-  [ ${#items[@]} -eq 0 ] && { die "No disks found (other than the Clonezilla boot media)."; return 1; }
+  [ ${#items[@]} -eq 0 ] && { die "No disks found (the Clonezilla boot media and the image-repo disk are never offered)."; return 1; }
   dialog --title "$TITLE" --no-tags --menu "$1\n\nModel · Size · Bus · Serial · [contents]" \
     20 110 10 "${items[@]}" 3>&1 1>&2 2>&3
 }
@@ -99,14 +113,24 @@ ensure_repo() {
 
   case $choice in
     local)
-      local items=() name size fstype label pk
-      while read -r name size fstype label pk; do
+      # Per-device lsblk queries: a combined listing is positional, and empty
+      # fields (no LABEL is common) shift PKNAME into the wrong variable,
+      # silently breaking the boot-disk / target-disk exclusions below.
+      local items=() name type fstype label pk boot
+      boot=$(boot_disk)
+      while read -r name type; do
+        case $type in disk|rom|loop) continue;; esac
+        fstype=$(lsblk -dno FSTYPE "/dev/$name" 2>/dev/null)
         [ -z "$fstype" ] && continue
-        [ "$pk" = "$exclude" ] && continue
-        [ "$pk" = "$(boot_disk)" ] && continue
         case $fstype in swap|crypto_LUKS|LVM2_member) continue;; esac
-        items+=("$name" "$(printf '%-7s %-6s %-12s on %s (%s)' "$size" "$fstype" "${label:--}" "$pk" "$(lsblk -dno MODEL /dev/$pk)")")
-      done < <(lsblk -rno NAME,SIZE,FSTYPE,LABEL,PKNAME | awk 'NF>=1 && $0 ~ / /')
+        pk=$(lsblk -dno PKNAME "/dev/$name" 2>/dev/null); pk=${pk:--}
+        [ "$pk" = "$exclude" ] && continue
+        [ "$pk" = "$boot" ] && continue
+        label=$(lsblk -dno LABEL "/dev/$name" 2>/dev/null)
+        items+=("$name" "$(printf '%-7s %-6s %-12s on %s (%s)' \
+          "$(lsblk -dno SIZE "/dev/$name")" "$fstype" "${label:--}" "$pk" \
+          "$(lsblk -dno MODEL "/dev/$pk" 2>/dev/null)")")
+      done < <(lsblk -rno NAME,TYPE)
       [ ${#items[@]} -eq 0 ] && { die "No usable partitions found for an image store."; return 1; }
       local part
       part=$(dialog --title "$TITLE" --no-tags --menu "Choose the partition holding (or to hold) the images:" 20 100 10 "${items[@]}" 3>&1 1>&2 2>&3) || return 1
@@ -178,10 +202,11 @@ Free space there:       $(df -h --output=avail "$IMG_ROOT" | tail -1 | tr -d ' '
 The image is verified automatically after saving.
 Proceed?" 18 80 || { release_repo; return; }
 
-  # -q2 partclone, -j2 clone hidden data, -z1p parallel gzip, -i 0 no split,
+  # -q2 partclone, -j2 clone hidden data, -z1p parallel gzip,
+  # -i 4096 split at 4 GB (so a FAT32 repo works; 0/"no split" is undocumented),
   # -sfsck skip fsck, -senc no encryption, -p true: return here when done,
   # -c: ocs-sr confirms nothing itself (we already did).
-  run_and_show ocs-sr -q2 -c -j2 -z1p -i 0 -sfsck -senc -p true savedisk "$name" "$disk" \
+  run_and_show ocs-sr -q2 -c -j2 -z1p -i 4096 -sfsck -senc -p true savedisk "$name" "$disk" \
     && run_and_show ocs-chkimg -or "$IMG_ROOT" "$name"
   release_repo
 }
