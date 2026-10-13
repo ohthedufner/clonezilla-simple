@@ -41,20 +41,37 @@ solves the UX problem but is a full graphical ISO. This sits in between.
 
 ## Install
 
-You already have a Clonezilla Live USB (made with Rufus, Ventoy, Tuxboot,
-`dd`, whatever). Mount it on a Linux machine, then:
+### Step 1 — make a normal Clonezilla Live USB
+
+Download the Clonezilla Live **ISO** (amd64, stable) and write it with
+[Rufus](https://rufus.ie):
+
+> **Do NOT use "DD Image" mode.** When Rufus asks, choose **"Write in ISO Image
+> mode"** (the default). DD mode — and balenaEtcher, which only does DD — produce
+> a read-only stick that Windows cannot write to, so the next step cannot work.
+
+Any ~1 GB or larger stick is fine.
+
+### Step 2 — add the simple menu
+
+**Windows:** download this repo as a ZIP (green *Code* button → *Download ZIP*),
+unzip it anywhere, and double-click **`windows\Install to USB.cmd`**.
+It finds the Clonezilla stick, copies the menu onto it, and makes it the
+default boot entry. Nothing is installed on your PC; it is a plain PowerShell
+script and needs no admin rights.
+
+**Linux / macOS:** mount the stick and run
 
 ```bash
-git clone https://github.com/ohthedufner/clonezilla-simple
-cd clonezilla-simple
 sudo ./install-to-usb.sh /media/$USER/CLONEZILLA     # wherever it mounted
 ```
 
-That copies `basic-imaging.sh` to the root of the stick and adds a new
-**default** boot entry (both the BIOS `syslinux.cfg` and UEFI `grub.cfg`)
-that launches it through Clonezilla's documented `ocs_live_run=` hook.
+Both installers do the same thing: copy `basic-imaging.sh` to the root of the
+stick and add a **default** boot entry (BIOS `syslinux.cfg` and UEFI `grub.cfg`)
+that starts it through Clonezilla's documented `ocs_live_run=` hook. Stock
+entries are kept. Re-running is safe.
 
-### No Linux handy?
+### No installer at all?
 
 Copy `basic-imaging.sh` to the root of the USB, boot normal Clonezilla,
 choose *Enter_shell*, and run:

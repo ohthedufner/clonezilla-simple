@@ -16,6 +16,15 @@ USB=${1:-}
 [ -d "$USB/live" ] || { echo "$USB does not look like a Clonezilla Live USB (no live/ folder)"; exit 1; }
 
 HERE=$(cd "$(dirname "$0")" && pwd)
+
+# Replace an existing ocs_live_run="..." (stock Clonezilla sets it) or append ours.
+set_run_hook() {
+  if [[ $1 =~ ocs_live_run= ]]; then
+    sed -E "s/ocs_live_run=(\"[^\"]*\"|[^ ]*)/${RUN_CMD//\//\\/}/" <<<"$1"
+  else
+    echo "$1 $RUN_CMD"
+  fi
+}
 LABEL="Basic Disk Imaging (simple menu)"
 # Path as seen from inside the booted live system; the medium is mounted here.
 RUN_CMD="ocs_live_run=\"bash /lib/live/mount/medium/basic-imaging.sh\""
@@ -39,7 +48,7 @@ for cfg in "$USB"/syslinux/syslinux.cfg "$USB"/syslinux/isolinux.cfg; do
   MENU DEFAULT
   MENU LABEL ${LABEL}
   kernel ${kernel}
-  append ${append} ${RUN_CMD}
+  append $(set_run_hook "$append")
   TEXT HELP
   Back up / restore / verify a disk with a short guided menu.
   Full Clonezilla is available from inside this menu.
@@ -59,14 +68,16 @@ for cfg in "$USB"/boot/grub/grub.cfg "$USB"/EFI/boot/grub.cfg; do
   fi
   # First stock menuentry block
   stock=$(awk '/^menuentry /{if(f)exit; f=1} f' "$cfg")
-  linux=$(echo "$stock" | sed -n 's/^[[:space:]]*linux //p' | head -1)
-  initrd=$(echo "$stock" | sed -n 's/^[[:space:]]*initrd //p' | head -1)
-  [ -n "$linux" ] && [ -n "$initrd" ] || { echo "could not parse $cfg; skipping"; continue; }
+  linux_line=$(echo "$stock"  | grep -Em1 '^[[:space:]]*(\$linux_cmd|linuxefi|linux) ')
+  initrd_line=$(echo "$stock" | grep -Em1 '^[[:space:]]*(\$initrd_cmd|initrdefi|initrd) ')
+  [ -n "$linux_line" ] && [ -n "$initrd_line" ] || { echo "could not parse $cfg; skipping"; continue; }
+  read -r linux_cmd linux   <<<"$linux_line"
+  read -r initrd_cmd initrd <<<"$initrd_line"
 
   entry="menuentry \"${LABEL}\" --id basic-imaging {
   search --set -f /live/vmlinuz
-  linux ${linux} ${RUN_CMD}
-  initrd ${initrd}
+  ${linux_cmd} $(set_run_hook "$linux")
+  ${initrd_cmd} ${initrd}
 }
 "
   awk -v e="$entry" '!done && /^menuentry /{print e; done=1} {print}' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
